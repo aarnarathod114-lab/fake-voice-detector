@@ -10,15 +10,16 @@ voice is synthetic. Includes a web demo where you can upload a clip and get a ve
 
 ## Results
 
-| Test set | Accuracy | EER |
-|---|---|---|
-| Seen generators, clean audio | 98.6% | 1.9% |
-| Seen generators, degraded audio | 97.7% | 1.9% |
-| Unseen generator, clean audio | 91.6% | 12.9% |
-| Unseen generator, degraded audio | 90.1% | 8.8% |
+Equal error rate (EER): the error rate at the threshold where missed fakes and false
+alarms are equal. Lower is better; 50% is guessing.
 
-EER (equal error rate) is the error rate at the point where missed fakes and false alarms
-are equal. Lower is better; 50% is guessing.
+| Model | Seen generators, clean | Seen, degraded | Unseen generator, clean | Unseen, degraded |
+|---|---|---|---|---|
+| CNN on mel spectrograms (used in the demo) | 1.6% | 2.1% | 12.7% | 12.1% |
+| Pretrained XLS-R, layer 3 + logistic regression | 0.0% | 1.1% | 11.5% | 11.5% |
+
+At its default threshold the CNN is 98.6% accurate on seen generators and 91.6% on the
+unseen one (clean audio).
 
 How the test is set up:
 
@@ -29,8 +30,20 @@ How the test is set up:
 - **Degraded audio.** Each clip also has a copy passed through Opus or MP3 compression with
   random loudness, clipping and noise, similar to audio sent through a phone app.
 
-The model is good on generators it has trained on and clearly worse on one it has not.
-That gap is the main open problem in this project.
+### Does a pretrained speech model fix the unseen-generator gap?
+
+I passed every clip through XLS-R (a wav2vec 2.0 model, frozen, not fine-tuned) and
+trained a logistic regression on each of its 25 layers separately (`w2v_probe.py`).
+
+- On seen generators it is clearly better than the CNN.
+- On the unseen generator it barely helps: 11.5% against 12.7% is about two clips out of
+  173, which is within noise.
+- Layers 3 to 24 all scored 0.0% on validation, so validation could not tell them apart;
+  layer 3 is simply the first. On the unseen generator every layer landed between 10.4%
+  and 14.5% (clean audio), so no layer solves it.
+
+This suggests the limit is the training data (five generators to learn from), not the
+type of model.
 
 ## What went wrong, and how I fixed it
 
@@ -54,14 +67,17 @@ differently in training and evaluation. Replacing it with GroupNorm fixed it.
 best-epoch selection and a cosine learning-rate schedule took seen-generator EER from 3.3%
 to 1.9%, but unseen-generator EER stayed about the same (12.1% to 12.9%).
 
-The baseline numbers in point 2 used an easier test set (YouTube real clips only, no
-degraded audio), so they are not directly comparable with the table above.
+**5. My EER calculation was imprecise.** Accuracy and EER disagreed in a way that was not
+possible, which led me to a shortcut in the EER function that could misreport the error
+by several points. The results table above uses the exact calculation. The EER figures
+quoted in points 2 to 4 were measured during development with the old calculation, on an
+easier test set in the case of point 2, so they are not directly comparable with the table.
 
 ## Limitations
 
 - Small dataset: 933 fake clips from 6 generators, and real speech from 14 YouTube sources
   plus 40 LibriSpeech speakers. English only.
-- 9–13% EER on an unseen generator is not reliable enough for real-world use.
+- 11–13% EER on an unseen generator is not reliable enough for real-world use.
 - Only one generator is held out, with one random seed, and the validation set has just
   78 fake clips, so small differences between runs are within noise.
 - The phone-recording check is a single clip, not a benchmark.
@@ -80,12 +96,14 @@ pip install torch librosa soundfile matplotlib scikit-learn huggingface_hub imag
 python download_data.py          # fake/real dataset, about 1.2 GB
 python download_librispeech.py   # extra real speech, 337 MB
 python prepare_data.py           # spectrograms and degraded copies
-python train.py                  # trains and prints the results table
+python train.py                  # trains the CNN and prints its results
 streamlit run streamlit_app.py   # web demo at http://localhost:8501
 python detector.py clip.ogg      # or check one file from the terminal
+python w2v_probe.py              # pretrained-model comparison; needs a GPU and `pip install transformers`
 ```
 
 ## Next steps
 
-- Use a pretrained speech model (wav2vec 2.0) to improve results on unseen generators.
-- Train and test on more generators and a larger benchmark dataset.
+- Train on more voice generators, since the model type was not the bottleneck.
+- Hold out each generator in turn, to check the unseen-generator result is not specific
+  to one generator.

@@ -10,7 +10,7 @@ st.title("Fake Voice Detector")
 st.write("Upload or record a few seconds of speech. The model estimates whether the voice "
          "is a real human or AI-generated.")
 st.caption("A student project. It can be wrong, especially on voice generators it has not "
-           "seen (about 9-13% error in testing). Clips are processed and then deleted.")
+           "seen (about 11-13% error in testing). Clips are processed and then deleted.")
 
 uploaded = st.file_uploader("Upload a voice clip",
                             type=["wav", "mp3", "ogg", "opus", "m4a", "flac", "aac", "webm"])

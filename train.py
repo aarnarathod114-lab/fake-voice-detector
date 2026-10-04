@@ -73,8 +73,10 @@ def scores_for(mask):
 
 
 def eer_of(scores, labels):
-    fpr, tpr, _ = roc_curve(labels, scores)
-    return fpr[np.nanargmin(np.abs(fpr - (1 - tpr)))]
+    fpr, tpr, _ = roc_curve(labels, scores, drop_intermediate=False)
+    fnr = 1 - tpr
+    i = np.nanargmin(np.abs(fpr - fnr))
+    return (fpr[i] + fnr[i]) / 2
 
 
 # ---- Train, checking the validation set after every epoch ----
