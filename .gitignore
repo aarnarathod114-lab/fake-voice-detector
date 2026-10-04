@@ -1,0 +1,14 @@
+# Python environment and cache
+venv/
+__pycache__/
+
+# Downloaded dataset and generated files
+data/
+features.npz
+model.pt
+
+# Personal voice recordings
+*.wav
+*.ogg
+*.m4a
+*.mp3
