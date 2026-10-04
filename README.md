@@ -3,6 +3,7 @@
 Detects whether a short speech clip is a real human voice or AI-generated. A small CNN
 reads mel spectrograms of 4-second audio windows and outputs the probability that the
 voice is synthetic. Includes a web demo where you can upload a clip and get a verdict.
+**Live demo:** https://fake-voice-detector-5n3sjmtgxcsjwl6xzmarp4.streamlit.app/
 
 ## Results
 
