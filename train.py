@@ -10,10 +10,10 @@ torch.manual_seed(SEED)
 rng = np.random.default_rng(SEED)
 
 data = np.load("features.npz")
-X, y, generator, source = data["X"], data["y"], data["generator"], data["source"]
+X, y, generator, source, augmented = (data[k] for k in ["X", "y", "generator", "source", "augmented"])
 
 
-# ---- Split by source, so one recording never lands in both train and test ----
+# ---- Split by source, so one speaker or recording never lands in both train and test ----
 def pick_test_sources(mask, fraction=0.25):
     names = np.unique(source[mask])
     rng.shuffle(names)
@@ -24,12 +24,14 @@ real = y == 0
 unseen_fake = generator == HELD_OUT_GENERATOR
 seen_fake = (y == 1) & ~unseen_fake
 
-test_sources = pick_test_sources(real) | pick_test_sources(seen_fake)
+test_sources = (pick_test_sources(generator == "yt") | pick_test_sources(generator == "ls")
+                | pick_test_sources(seen_fake))
 in_test_source = np.array([s in test_sources for s in source])
 
 train = (real | seen_fake) & ~in_test_source
-test_seen = (real | seen_fake) & in_test_source
-test_unseen = (real & in_test_source) | unseen_fake
+test_real = real & in_test_source
+test_seen = test_real | (seen_fake & in_test_source)
+test_unseen = test_real | unseen_fake
 
 for name, mask in [("train", train), ("test_seen", test_seen), ("test_unseen", test_unseen)]:
     print(f"{name}: {int((mask & real).sum())} real, {int((mask & ~real).sum())} fake")
@@ -37,7 +39,7 @@ for name, mask in [("train", train), ("test_seen", test_seen), ("test_unseen", t
 
 # ---- Model: a small CNN that reads the spectrogram like an image ----
 def block(c_in, c_out):
-    return nn.Sequential(nn.Conv2d(c_in, c_out, 3, padding=1), nn.BatchNorm2d(c_out),
+    return nn.Sequential(nn.Conv2d(c_in, c_out, 3, padding=1), nn.GroupNorm(8, c_out),
                          nn.ReLU(), nn.MaxPool2d(2))
 
 
@@ -53,8 +55,10 @@ def tensors(mask):
 
 # ---- Train ----
 Xtr, ytr = tensors(train)
+# There are more real clips than fake ones, so mistakes on fakes count for more
+pos_weight = (ytr == 0).sum() / (ytr == 1).sum()
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-loss_fn = nn.BCEWithLogitsLoss()
+loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
 for epoch in range(1, EPOCHS + 1):
     model.train()
@@ -83,8 +87,10 @@ def evaluate(name, mask):
     print(f"{name}: accuracy {accuracy:.1%} | EER {eer:.1%}")
 
 
-evaluate("seen generators  ", test_seen)
-evaluate("unseen generator ", test_unseen)
+evaluate("seen generators, clean    ", test_seen & ~augmented)
+evaluate("seen generators, degraded ", test_seen & augmented)
+evaluate("unseen generator, clean   ", test_unseen & ~augmented)
+evaluate("unseen generator, degraded", test_unseen & augmented)
 
 torch.save(model.state_dict(), "model.pt")
 print("saved model.pt")

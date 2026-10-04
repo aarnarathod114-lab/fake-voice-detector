@@ -14,7 +14,7 @@ N_SAMPLES = SR * SECONDS
 
 # Same model shape as in train.py, then load the trained weights
 def block(c_in, c_out):
-    return nn.Sequential(nn.Conv2d(c_in, c_out, 3, padding=1), nn.BatchNorm2d(c_out),
+    return nn.Sequential(nn.Conv2d(c_in, c_out, 3, padding=1), nn.GroupNorm(8, c_out),
                          nn.ReLU(), nn.MaxPool2d(2))
 
 
