@@ -5,7 +5,6 @@ __pycache__/
 # Downloaded dataset and generated files
 data/
 features.npz
-model.pt
 
 # Personal voice recordings
 *.wav
