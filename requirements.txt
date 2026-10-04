@@ -3,3 +3,4 @@ torch
 librosa
 imageio-ffmpeg
 numpy
+streamlit

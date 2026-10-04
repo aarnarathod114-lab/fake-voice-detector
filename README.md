@@ -72,12 +72,12 @@ degraded audio), so they are not directly comparable with the table above.
 ## How to run
 
 ```
-pip install torch librosa soundfile matplotlib scikit-learn huggingface_hub imageio-ffmpeg gradio
+pip install torch librosa soundfile matplotlib scikit-learn huggingface_hub imageio-ffmpeg streamlit
 python download_data.py          # fake/real dataset, about 1.2 GB
 python download_librispeech.py   # extra real speech, 337 MB
 python prepare_data.py           # spectrograms and degraded copies
 python train.py                  # trains and prints the results table
-python app.py                    # web demo at http://127.0.0.1:7860
+     streamlit run streamlit_app.py   # web demo at http://localhost:8501
 python detector.py clip.ogg      # or check one file from the terminal
 ```
 
