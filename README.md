@@ -3,7 +3,10 @@
 Detects whether a short speech clip is a real human voice or AI-generated. A small CNN
 reads mel spectrograms of 4-second audio windows and outputs the probability that the
 voice is synthetic. Includes a web demo where you can upload a clip and get a verdict.
+
 **Live demo:** https://fake-voice-detector-5n3sjmtgxcsjwl6xzmarp4.streamlit.app/
+
+![Mel spectrogram of a speech clip, the input the model sees](spectrogram.png)
 
 ## Results
 
@@ -78,7 +81,7 @@ python download_data.py          # fake/real dataset, about 1.2 GB
 python download_librispeech.py   # extra real speech, 337 MB
 python prepare_data.py           # spectrograms and degraded copies
 python train.py                  # trains and prints the results table
-     streamlit run streamlit_app.py   # web demo at http://localhost:8501
+streamlit run streamlit_app.py   # web demo at http://localhost:8501
 python detector.py clip.ogg      # or check one file from the terminal
 ```
 
@@ -86,4 +89,3 @@ python detector.py clip.ogg      # or check one file from the terminal
 
 - Use a pretrained speech model (wav2vec 2.0) to improve results on unseen generators.
 - Train and test on more generators and a larger benchmark dataset.
-- Host the demo online.
