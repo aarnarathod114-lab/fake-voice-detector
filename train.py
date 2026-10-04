@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -5,7 +7,7 @@ from sklearn.metrics import roc_curve
 
 SEED = 0
 HELD_OUT_GENERATOR = "el"   # the model never hears this generator in training
-EPOCHS = 12
+EPOCHS = 24
 torch.manual_seed(SEED)
 rng = np.random.default_rng(SEED)
 
@@ -13,8 +15,8 @@ data = np.load("features.npz")
 X, y, generator, source, augmented = (data[k] for k in ["X", "y", "generator", "source", "augmented"])
 
 
-# ---- Split by source, so one speaker or recording never lands in both train and test ----
-def pick_test_sources(mask, fraction=0.25):
+# ---- Split by source, so one speaker or recording never lands in two splits ----
+def pick_sources(mask, fraction):
     names = np.unique(source[mask])
     rng.shuffle(names)
     return set(names[: max(1, int(len(names) * fraction))])
@@ -24,16 +26,25 @@ real = y == 0
 unseen_fake = generator == HELD_OUT_GENERATOR
 seen_fake = (y == 1) & ~unseen_fake
 
-test_sources = (pick_test_sources(generator == "yt") | pick_test_sources(generator == "ls")
-                | pick_test_sources(seen_fake))
-in_test_source = np.array([s in test_sources for s in source])
+# Test split first (same as before, so results stay comparable)
+test_sources = (pick_sources(generator == "yt", 0.25) | pick_sources(generator == "ls", 0.25)
+                | pick_sources(seen_fake, 0.25))
+in_test = np.array([s in test_sources for s in source])
 
-train = (real | seen_fake) & ~in_test_source
-test_real = real & in_test_source
-test_seen = test_real | (seen_fake & in_test_source)
+# Then a validation split, taken from what's left
+left = ~in_test
+val_sources = (pick_sources((generator == "yt") & left, 0.15)
+               | pick_sources((generator == "ls") & left, 0.15)
+               | pick_sources(seen_fake & left, 0.15))
+in_val = np.array([s in val_sources for s in source])
+
+train = (real | seen_fake) & ~in_test & ~in_val
+val = (real | seen_fake) & in_val
+test_real = real & in_test
+test_seen = test_real | (seen_fake & in_test)
 test_unseen = test_real | unseen_fake
 
-for name, mask in [("train", train), ("test_seen", test_seen), ("test_unseen", test_unseen)]:
+for name, mask in [("train", train), ("val", val), ("test_seen", test_seen), ("test_unseen", test_unseen)]:
     print(f"{name}: {int((mask & real).sum())} real, {int((mask & ~real).sum())} fake")
 
 
@@ -53,13 +64,27 @@ def tensors(mask):
     return torch.from_numpy(X[mask]).unsqueeze(1), torch.from_numpy(y[mask]).float()
 
 
-# ---- Train ----
+def scores_for(mask):
+    Xt, yt = tensors(mask)
+    model.eval()
+    with torch.no_grad():
+        s = torch.cat([model(Xt[i:i + 64]).squeeze(1) for i in range(0, len(Xt), 64)]).numpy()
+    return s, yt.numpy()
+
+
+def eer_of(scores, labels):
+    fpr, tpr, _ = roc_curve(labels, scores)
+    return fpr[np.nanargmin(np.abs(fpr - (1 - tpr)))]
+
+
+# ---- Train, checking the validation set after every epoch ----
 Xtr, ytr = tensors(train)
-# There are more real clips than fake ones, so mistakes on fakes count for more
-pos_weight = (ytr == 0).sum() / (ytr == 1).sum()
+pos_weight = (ytr == 0).sum() / (ytr == 1).sum()   # more real than fake clips, so weight fakes up
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
 loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
+best_eer, best_epoch, best_state = 1.0, 0, None
 for epoch in range(1, EPOCHS + 1):
     model.train()
     order = torch.randperm(len(Xtr))
@@ -71,20 +96,22 @@ for epoch in range(1, EPOCHS + 1):
         loss.backward()
         optimizer.step()
         total += loss.item() * len(idx)
-    print(f"epoch {epoch:2d} | train loss {total / len(Xtr):.3f}", flush=True)
+    scheduler.step()
+
+    val_eer = eer_of(*scores_for(val))
+    if val_eer <= best_eer:
+        best_eer, best_epoch, best_state = val_eer, epoch, copy.deepcopy(model.state_dict())
+    print(f"epoch {epoch:2d} | train loss {total / len(Xtr):.3f} | val EER {val_eer:.1%}", flush=True)
+
+model.load_state_dict(best_state)
+print(f"keeping the model from epoch {best_epoch} (val EER {best_eer:.1%})")
 
 
 # ---- Test ----
 def evaluate(name, mask):
-    Xt, yt = tensors(mask)
-    model.eval()
-    with torch.no_grad():
-        scores = torch.cat([model(Xt[i:i + 64]).squeeze(1) for i in range(0, len(Xt), 64)]).numpy()
-    labels = yt.numpy()
+    scores, labels = scores_for(mask)
     accuracy = ((scores > 0) == (labels == 1)).mean()
-    fpr, tpr, _ = roc_curve(labels, scores)
-    eer = fpr[np.nanargmin(np.abs(fpr - (1 - tpr)))]
-    print(f"{name}: accuracy {accuracy:.1%} | EER {eer:.1%}")
+    print(f"{name}: accuracy {accuracy:.1%} | EER {eer_of(scores, labels):.1%}")
 
 
 evaluate("seen generators, clean    ", test_seen & ~augmented)
